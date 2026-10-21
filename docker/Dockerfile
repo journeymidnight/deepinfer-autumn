@@ -49,6 +49,14 @@ RUN cd /opt/DeepInfer \
     && cp -r /opt/autumn_pd deepinfer/autumn_pd \
     && git diff --stat | tail -4
 
-RUN cd /opt/DeepInfer && PIP_INDEX_URL="$(cat /opt/pip-index)" bash ./build.sh
+# TORCH_DEVICE_BACKEND_AUTOLOAD=0 is required to build here at all. The vendor
+# setup.py files import torch, torch then auto-loads the torch_npu backend, and
+# torch_npu needs libascend_hal.so -- which belongs to the Ascend DRIVER, bind
+# mounted from the host, not to the CANN toolkit. A CP build agent has no NPU
+# and no driver, so the import dies with "cannot open shared object file" before
+# a single kernel is compiled. Compiling needs the toolkit, which IS in the
+# image; only the runtime needs the driver. torch itself still imports fine.
+RUN cd /opt/DeepInfer \
+    && TORCH_DEVICE_BACKEND_AUTOLOAD=0 PIP_INDEX_URL="$(cat /opt/pip-index)" bash ./build.sh
 
 WORKDIR /opt/DeepInfer
