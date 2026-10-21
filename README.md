@@ -44,9 +44,15 @@ cleanly from the Ascend host. USTC's launchpad proxy does not fix it: it answers
 200 on `Release` and 503 on the pool, so a build gets a healthy-looking index
 and then fails fetching debs.
 
-So the toolchain is built once, on the host, and pushed as `deepinfer-deps`;
-the CP pipeline only does the DeepInfer build on top. Same split as
-`build-lerobot-deps` in this account.
+A separate `deepinfer-deps` base image was tried for this and dropped. The CANN
+base layers are not in the target registry, so nothing dedupes and the push is
+~14 GB — which ran the host's docker filesystem out of space. And a later run
+installed the PPAs first-try with no retries, so the problem is slow and
+intermittent rather than unusable.
+
+The Dockerfile is therefore self-contained, with a retry loop around the PPA
+install. `docker/Dockerfile.deps` keeps the same recipe if a prebuilt base is
+ever wanted.
 
 ## Creating the pipeline
 
