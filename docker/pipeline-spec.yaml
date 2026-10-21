@@ -17,16 +17,9 @@ sources:
         type: serviceConnection
         serviceConnectionId: lZoCJ9fJe0TyKPhA2DFB
       cloneDepth: 1
-    # Source 2: upstream DeepInfer, pinned. CP clones it through the service
-    # connection, so the build never has to reach github itself.
-    - name: deepinfer_upstream
-      type: Github
-      url: https://github.com/deepseek-ai/DeepInfer.git
-      branch: main
-      credential:
-        type: serviceConnection
-        serviceConnectionId: lZoCJ9fJe0TyKPhA2DFB
-      cloneDepth: 1
+    # Upstream DeepInfer is NOT a second source: the Dockerfile fetches it at
+    # the pinned SHA from DEEPINFER_REV through GITHUB_MIRROR, which keeps the
+    # pipeline to one source and this repo a delta rather than a fork.
 stages:
     - stage: build
       displayName: build DeepInfer + autumn PD
@@ -39,7 +32,9 @@ stages:
               displayName: 镜像构建推送至镜像仓库服务
               component: build@2.0.0/buildkit-cr@5.0.0
               inputs:
-                buildParams: --build-arg APT_MIRROR=https://mirrors.ivolces.com --build-arg PIP_INDEX_URL=https://mirrors.ivolces.com/pypi/simple
+                # NOT mirrors.ivolces.com for pip: its index stops at einops
+                # 0.8.1 while requirements-ascend.txt pins 0.8.2.
+                buildParams: --build-arg APT_MIRROR=https://mirrors.ivolces.com --build-arg PIP_INDEX_URL=https://pypi.org/simple
                 cacheType: default
                 compression: gzip
                 contextPath: .
@@ -52,7 +47,7 @@ stages:
                 nydusify: false
                 region: cn-beijing
                 registryInstance: dongmao-test
-                repo: deepinfer-autumn
+                repo: deepinfer-autumn   # NOT freetoken-autumn -- that is FreeToken's image repo
                 tag: ${SCM_COMMIT_ID}
                 useCache: true
           outputs:
@@ -61,8 +56,6 @@ stages:
             resources:
                 - ref: deepinfer_autumn
                   directory: $(CP_WORKSPACE)
-                - ref: deepinfer_upstream
-                  directory: $(CP_WORKSPACE)/DeepInfer
           resourcesPolicy: all
           resources:
             limits:
