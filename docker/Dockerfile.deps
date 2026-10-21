@@ -39,6 +39,11 @@ RUN apt-get update \
     && add-apt-repository -y ppa:ubuntu-toolchain-r/test \
     && apt-get update
 
+# A partial failure leaves dpkg half-configured, and the next plain retry dies
+# on "Unmet dependencies. Try apt --fix-broken install" rather than on the
+# original 503 -- which is how a six-pass loop burned five useless passes. Each
+# pass therefore repairs the package database before retrying.
+#
 # ppa.launchpadcontent.net answers 503 intermittently from the CN build pool
 # and serves at ~70 kB/s: a first attempt fetched 65 MB in 15m31s and still
 # lost 9 packages to 503s. The retries are for that, not for a dependency
@@ -52,7 +57,10 @@ RUN set -eu; \
                 -o Acquire::Retries=10 -o Acquire::http::Timeout=60 --fix-missing \
                 python3.12 python3.12-dev python3.12-venv gcc-13 g++-13; then ok=1; break; fi; \
         echo "=== apt attempt $i failed (launchpad 503s expected); retrying ==="; \
-        sleep 20; apt-get update || true; \
+        sleep 20; \
+        dpkg --configure -a || true; \
+        apt-get --fix-broken install -y || true; \
+        apt-get update || true; \
     done; \
     [ "$ok" = 1 ] || { echo "apt never completed after 6 attempts"; exit 100; }; \
     update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 130 \
