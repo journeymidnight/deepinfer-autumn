@@ -32,19 +32,35 @@ RUN if [ -n "$APT_MIRROR" ]; then \
       echo "apt via ${m}"; \
     fi
 
+# Split from the PPA install below so a retry reuses this layer from cache.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends -o Acquire::Retries=10 \
         software-properties-common ca-certificates gnupg dirmngr \
         curl git pkg-config make cmake ninja-build \
     && add-apt-repository -y ppa:deadsnakes/ppa \
     && add-apt-repository -y ppa:ubuntu-toolchain-r/test \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends \
-        python3.12 python3.12-dev python3.12-venv gcc-13 g++-13 \
-    && update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 130 \
-        --slave /usr/bin/g++ g++ /usr/bin/g++-13 \
-    && rm -rf /var/lib/apt/lists/* \
-    && gcc --version | head -1 && python3.12 -V
+    && apt-get update
+
+# ppa.launchpadcontent.net answers 503 intermittently from the CN build pool
+# and serves at ~70 kB/s: a first attempt fetched 65 MB in 15m31s and still
+# lost 9 packages to 503s. The retries are for that, not for a dependency
+# problem -- the identical sequence installs cleanly on the target host. Each
+# pass re-runs `apt-get update` because a 503 can also poison the package
+# lists, and apt keeps whatever .debs it already fetched, so passes get cheaper.
+RUN set -eu; \
+    ok=0; \
+    for i in 1 2 3 4 5 6; do \
+        if apt-get install -y --no-install-recommends \
+                -o Acquire::Retries=10 -o Acquire::http::Timeout=60 --fix-missing \
+                python3.12 python3.12-dev python3.12-venv gcc-13 g++-13; then ok=1; break; fi; \
+        echo "=== apt attempt $i failed (launchpad 503s expected); retrying ==="; \
+        sleep 20; apt-get update || true; \
+    done; \
+    [ "$ok" = 1 ] || { echo "apt never completed after 6 attempts"; exit 100; }; \
+    update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 130 \
+        --slave /usr/bin/g++ g++ /usr/bin/g++-13; \
+    rm -rf /var/lib/apt/lists/*; \
+    gcc --version | head -1; python3.12 -V
 
 # DeepInfer runs from this venv, so a bad install cannot brick the CANN
 # toolkit's own interpreter (/usr/local/python3.11.16).
