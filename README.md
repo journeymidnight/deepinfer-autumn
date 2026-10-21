@@ -11,7 +11,9 @@ carries only the delta:
 |---|---|
 | `patches/deepinfer-pd-native.patch` | the `csrc/` scheduler methods PD needs (C++, so it must be compiled into the image) |
 | `autumn_pd/` | the Python adapter, copied to `deepinfer/autumn_pd/` |
-| `docker/Dockerfile` | CANN 9.2 + Python 3.12 + GCC 13, then `build.sh` |
+| `docker/Dockerfile` | fetches DeepInfer, applies the delta, runs `build.sh` (FROM the deps image) |
+| `docker/Dockerfile.deps` | the toolchain base: CANN 9.2 + Python 3.12 + GCC 13 |
+| `scripts/toolchain.sh` | the same toolchain steps, as run on the host |
 | `docker/pipeline-spec.yaml` | the CP pipeline spec, to paste in the console |
 
 ## Why the Dockerfile looks like that
@@ -32,6 +34,19 @@ caution:
 - Nothing is cloned from github inside the build. The CN build pool cannot
   reach github reliably (autumn-rs's Dockerfile documents the same problem for
   cargo); CP's own clone goes through its service connection instead.
+
+## Why the toolchain is a separate image
+
+`ppa.launchpadcontent.net` serves the CN build pool at roughly 70 kB/s with
+intermittent 503s — one CP run fetched 65 MB over 15m31s and still lost nine
+packages, failing the build after 18 minutes. The same apt sequence installs
+cleanly from the Ascend host. USTC's launchpad proxy does not fix it: it answers
+200 on `Release` and 503 on the pool, so a build gets a healthy-looking index
+and then fails fetching debs.
+
+So the toolchain is built once, on the host, and pushed as `deepinfer-deps`;
+the CP pipeline only does the DeepInfer build on top. Same split as
+`build-lerobot-deps` in this account.
 
 ## Creating the pipeline
 
