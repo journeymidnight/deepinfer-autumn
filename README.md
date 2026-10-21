@@ -13,6 +13,7 @@ carries only the delta:
 | `autumn_pd/` | the Python adapter, copied to `deepinfer/autumn_pd/` |
 | `docker/Dockerfile` | fetches DeepInfer, applies the delta, runs `build.sh` (FROM the deps image) |
 | `docker/Dockerfile.deps` | the toolchain base: CANN 9.2 + Python 3.12 + GCC 13 |
+| `docker/pipeline-spec-deps.yaml` | the deps pipeline spec (build + push `deepinfer-deps`) |
 | `scripts/toolchain.sh` | the same toolchain steps, as run on the host |
 | `docker/pipeline-spec.yaml` | the CP pipeline spec, to paste in the console |
 
@@ -44,18 +45,26 @@ cleanly from the Ascend host. USTC's launchpad proxy does not fix it: it answers
 200 on `Release` and 503 on the pool, so a build gets a healthy-looking index
 and then fails fetching debs.
 
-A separate `deepinfer-deps` base image was tried for this and dropped. The CANN
-base layers are not in the target registry, so nothing dedupes and the push is
-~14 GB — which ran the host's docker filesystem out of space. And a later run
-installed the PPAs first-try with no retries, so the problem is slow and
-intermittent rather than unusable.
+The toolchain therefore lives in its own image, `deepinfer-deps`, built and
+pushed by its **own CP pipeline** — the same split as `build-lerobot-deps` /
+`build-lerobot` in this account. `deepinfer-autumn` just does `FROM` it, so the
+pipeline that runs often never repeats that install.
 
-The Dockerfile is therefore self-contained, with a retry loop around the PPA
-install. `docker/Dockerfile.deps` keeps the same recipe if a prebuilt base is
-ever wanted.
+The deps image is built by CP rather than on the Ascend host. `buildkit-cr`
+already has registry credentials there, while pushing the ~14 GB image from the
+host exhausted its docker filesystem and died with ENOSPC — the CANN base layers
+are not in the target registry, so nothing dedupes and the whole image uploads.
 
 ## Creating the pipeline
 
 CP's API has no create-pipeline endpoint — only delete/list/run/cancel/webhook
-— so the pipeline must be created once by hand in the console from
-`docker/pipeline-spec.yaml`. After that `volc-cp run start` drives it.
+— so each pipeline is created once by hand in the console. **Two** are needed:
+
+| pipeline | dockerfile | tag | when it runs |
+|---|---|---|---|
+| `deepinfer-deps` | `docker/Dockerfile.deps` | `cann9.2-py312-gcc13` (fixed) | only when the toolchain changes |
+| `deepinfer-autumn` | `docker/Dockerfile` | `${SCM_COMMIT_ID}` | every change here |
+
+The deps tag is fixed on purpose: the main Dockerfile's `BASE_IMAGE` names it,
+and the toolchain changes far less often than this repo. After both exist,
+`volc-cp run start` drives them.
