@@ -75,4 +75,30 @@ RUN python3.12 -m venv "$VIRTUAL_ENV" && "$VIRTUAL_ENV/bin/pip" install -U pip w
 ENV PATH=$VIRTUAL_ENV/bin:$PATH
 ENV DEEPINFER_ACCELERATOR=ascend
 
+# The heavy python dependencies belong HERE, not in the pipeline that runs on
+# every change: torch 2.13.0+cpu is ~900 MB, and torch_npu, einops and the rest
+# follow it. build.sh re-runs this same pip install, which is then satisfied and
+# returns in seconds.
+#
+# Only the requirements files are fetched, at the same revision DEEPINFER_REV
+# pins, so the deps image and the build cannot disagree about what is installed.
+# NOTE: rebuild this image when DEEPINFER_REV or any requirements file changes.
+#
+# NOT mirrors.ivolces.com: its index stops at einops 0.8.1 while
+# requirements-ascend.txt pins 0.8.2, so the resolve fails outright.
+ARG PIP_INDEX_URL=https://pypi.org/simple
+ARG GITHUB_MIRROR=https://ghfast.top/https://github.com/
+COPY DEEPINFER_REV /opt/DEEPINFER_REV
+RUN set -eux; \
+    sha="$(cut -d= -f2 /opt/DEEPINFER_REV)"; \
+    base="${GITHUB_MIRROR:-https://github.com/}"; \
+    mkdir -p /opt/req && cd /opt/req && git init -q; \
+    git remote add origin "${base}deepseek-ai/DeepInfer.git"; \
+    git fetch --depth 1 origin "$sha"; \
+    git checkout -q FETCH_HEAD -- requirements.txt requirements-ascend.txt requirements-dev.txt; \
+    ls -l; \
+    PIP_INDEX_URL="$PIP_INDEX_URL" pip install -r requirements-ascend.txt; \
+    python -c "import torch; print('torch', torch.__version__)"; \
+    pip list 2>/dev/null | grep -iE "^(torch|torch-npu|einops) " || true
+
 CMD ["bash"]

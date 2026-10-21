@@ -12,7 +12,7 @@ carries only the delta:
 | `patches/deepinfer-pd-native.patch` | the `csrc/` scheduler methods PD needs (C++, so it must be compiled into the image) |
 | `autumn_pd/` | the Python adapter, copied to `deepinfer/autumn_pd/` |
 | `docker/Dockerfile` | fetches DeepInfer, applies the delta, runs `build.sh` (FROM the deps image) |
-| `docker/Dockerfile.deps` | the toolchain base: CANN 9.2 + Python 3.12 + GCC 13 |
+| `docker/Dockerfile.deps` | the base: CANN 9.2 + Python 3.12 + GCC 13 **and the python dependencies** |
 | `docker/pipeline-spec-deps.yaml` | the deps pipeline spec (build + push `deepinfer-deps`) |
 | `scripts/toolchain.sh` | the same toolchain steps, as run on the host |
 | `docker/pipeline-spec.yaml` | the CP pipeline spec, to paste in the console |
@@ -66,5 +66,10 @@ CP's API has no create-pipeline endpoint — only delete/list/run/cancel/webhook
 | `deepinfer-autumn` | `docker/Dockerfile` | `${SCM_COMMIT_ID}` | every change here |
 
 The deps tag is fixed on purpose: the main Dockerfile's `BASE_IMAGE` names it,
-and the toolchain changes far less often than this repo. After both exist,
+and the base changes far less often than this repo.
+
+The deps image also carries the heavy python dependencies (torch is ~900 MB),
+fetched at the revision `DEEPINFER_REV` pins so the two cannot disagree.
+**Rebuild it when `DEEPINFER_REV` or any requirements file changes** — that is
+the one thing the fixed tag does not announce. After both exist,
 `volc-cp run start` drives them.
