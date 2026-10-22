@@ -96,13 +96,14 @@ RUN apt-get update \
 # every github.com clone through the mirror, submodules included.
 RUN git config --global url."${GITHUB_MIRROR}".insteadOf "https://github.com/"
 
-# vendor/DeepSelect does not build on an x86_64 host with this toolchain; the
-# patch script says what it changes and why, each edit measured against the
-# real failing compile. It runs here, after the submodule is checked out and
-# before build_vendor.sh, whose own `submodule update --init` has no --force
-# and whose recorded SHAs already match, so it leaves these edits alone.
+# The ascend vendor operators do not build on an x86_64 host with this
+# toolchain; the patch script says what it changes and why, each edit measured
+# against the real failing compile. It runs here, after the submodules are
+# checked out and before build_vendor.sh, whose own `submodule update --init`
+# has no --force and whose recorded SHAs already match, so it leaves these
+# edits alone.
 #
-# Only DeepSelect, and not --recursive: a full recursive init walks into
+# Named packages, and not --recursive: a full recursive init walks into
 # vendor/DeepEP -- the CUDA variant, which build_vendor.sh does not build on
 # Ascend -- whose nested DeepJIT is recorded with an ssh URL
 # (git@github.com:...). There is no ssh client in the image, so that clone
@@ -110,8 +111,9 @@ RUN git config --global url."${GITHUB_MIRROR}".insteadOf "https://github.com/"
 # recursive init inside each package it actually builds.
 RUN set -eu; \
     cd /opt/DeepInfer; \
-    git submodule update --init vendor/DeepSelect; \
-    python3 /opt/patches/deepselect_x86_64_clang15.py vendor/DeepSelect
+    git submodule update --init \
+        vendor/DeepSelect vendor/FlashMLA vendor/DeepEP-Ascend vendor/DeepGEMM-Ascend; \
+    python3 /opt/patches/vendor_x86_64_clang15.py .
 
 # set_env.sh is what makes the toolkit usable, and no layer had ever sourced
 # it: the base image sets the Ascend environment from /root/.bashrc, which a
