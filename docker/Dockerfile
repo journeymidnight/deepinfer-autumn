@@ -78,7 +78,19 @@ RUN cd /opt/DeepInfer \
 # Its ascend branch then imports torch_npu explicitly, which still wants
 # libascend_hal.so. The CANN toolkit ships a link stub of it under
 # x86_64-linux/devlib/linux/x86_64 -- that is in the image, unlike the driver --
-# so the stub dir goes on LD_LIBRARY_PATH to get through the import.
+# and that stub is enough: the run that added it got as far as
+# "Building DeepSelect (ASCEND)".
+#
+# lspci is a real build dependency, not a convenience. DeepSelect imports
+# tests.kernelkit, whose build.py calls get_current_platform() at import time,
+# and that falls through to `lspci` when /dev/davinci_manager is absent -- as it
+# is on a CP agent. With it installed the detection returns CPU_ONLY, which is
+# the branch that avoids importing CUDA machinery, and the env var above still
+# decides what actually gets built.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends pciutils \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN cd /opt/DeepInfer \
     && TORCH_DEVICE_BACKEND_AUTOLOAD=0 \
        DEEPINFER_ACCELERATOR=ascend \
