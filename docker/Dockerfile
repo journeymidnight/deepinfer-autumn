@@ -91,6 +91,13 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends pciutils \
     && rm -rf /var/lib/apt/lists/*
 
+# build.sh updates DeepSelect's submodules, and those carry their own
+# github.com URLs, so GITHUB_MIRROR above does not cover them: cloning
+# NVIDIA/cutlass direct took 90s to fail on "GnuTLS recv error (-110)" twice,
+# and the run before that happened to succeed. A url.insteadOf rewrite sends
+# every github.com clone through the mirror, submodules included.
+RUN git config --global url."${GITHUB_MIRROR}".insteadOf "https://github.com/"
+
 RUN cd /opt/DeepInfer \
     && TORCH_DEVICE_BACKEND_AUTOLOAD=0 \
        DEEPINFER_ACCELERATOR=ascend \
