@@ -120,9 +120,15 @@ RUN git config --global url."${GITHUB_MIRROR}".insteadOf "https://github.com/"
 #
 #    so the kernel is pointed at the base image's own older libstdc++ headers.
 #    Only DeepSelect's flags change; DeepInfer still builds against GCC 13.
+# Only DeepSelect, and not --recursive: a full recursive init walks into
+# vendor/DeepEP -- the CUDA variant, which build_vendor.sh does not build on
+# Ascend -- whose nested DeepJIT is recorded with an ssh URL
+# (git@github.com:...). There is no ssh client in the image, so that clone
+# fails and takes the whole step with it. build_vendor.sh does its own
+# recursive init inside each package it actually builds.
 RUN set -eu; \
     cd /opt/DeepInfer; \
-    git submodule update --init --recursive; \
+    git submodule update --init vendor/DeepSelect; \
     m="$(uname -m)"; \
     cxx_old="$(ls /usr/include/c++ | sort -V | head -1)"; \
     sed -i "s|\"aarch64-linux\"|\"${m}-linux\"|g" vendor/DeepSelect/setup.py; \
