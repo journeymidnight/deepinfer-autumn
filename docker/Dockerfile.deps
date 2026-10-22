@@ -112,7 +112,12 @@ RUN set -eux; \
         idx=https://repo.huaweicloud.com/repository/pypi/simple ;; \
     esac; \
     PIP_INDEX_URL="$idx" pip install -r requirements-ascend.txt; \
-    python -c "import torch; print('torch', torch.__version__)"; \
+    # Without TORCH_DEVICE_BACKEND_AUTOLOAD=0 this import pulls in torch_npu,
+    # which dlopens libascend_hal.so -- the Ascend *driver*. The driver lives on
+    # the NPU host; the image carries the toolkit, which is the compiler and is
+    # enough to build against but cannot initialize a device. This is what
+    # failed run 597da518, after pip had already succeeded.
+    TORCH_DEVICE_BACKEND_AUTOLOAD=0 python -c "import torch; print('torch', torch.__version__)"; \
     pip list 2>/dev/null | grep -iE "^(torch|torch-npu|einops) " || true
 
 CMD ["bash"]

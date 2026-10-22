@@ -62,7 +62,28 @@ RUN cd /opt/DeepInfer \
 # and no driver, so the import dies with "cannot open shared object file" before
 # a single kernel is compiled. Compiling needs the toolkit, which IS in the
 # image; only the runtime needs the driver. torch itself still imports fine.
+#
+# Two more things the build needs to be told, both measured on the 950PR:
+#
+#   DEEPINFER_ACCELERATOR -- scripts/build.sh reads it as
+#   PLATFORM_TAG="${DEEPINFER_ACCELERATOR:-nvidia}-$(uname -m)", so unset it
+#   builds and installs the extension under nvidia-x86_64 and an Ascend host
+#   then finds no _so/ascend-x86_64 to import.
+#
+#   DEEP_SELECT_BUILD_TARGET_PLATFORM -- vendor/DeepSelect/setup.py detects the
+#   platform by importing torch_npu. With the autoload above disabled it falls
+#   back to Platform.CUDA and dies on "PyTorch must be compiled with CUDA
+#   support"; the env var (uppercase ASCEND) overrides the detection.
+#
+# Its ascend branch then imports torch_npu explicitly, which still wants
+# libascend_hal.so. The CANN toolkit ships a link stub of it under
+# x86_64-linux/devlib/linux/x86_64 -- that is in the image, unlike the driver --
+# so the stub dir goes on LD_LIBRARY_PATH to get through the import.
 RUN cd /opt/DeepInfer \
-    && TORCH_DEVICE_BACKEND_AUTOLOAD=0 PIP_INDEX_URL="$(cat /opt/pip-index)" bash ./build.sh
+    && TORCH_DEVICE_BACKEND_AUTOLOAD=0 \
+       DEEPINFER_ACCELERATOR=ascend \
+       DEEP_SELECT_BUILD_TARGET_PLATFORM=ASCEND \
+       LD_LIBRARY_PATH="${ASCEND_HOME_PATH:-/usr/local/Ascend/ascend-toolkit/latest}/x86_64-linux/devlib/linux/x86_64:${LD_LIBRARY_PATH:-}" \
+       PIP_INDEX_URL="$(cat /opt/pip-index)" bash ./build.sh
 
 WORKDIR /opt/DeepInfer
