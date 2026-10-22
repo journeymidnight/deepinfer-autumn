@@ -98,11 +98,20 @@ RUN apt-get update \
 # every github.com clone through the mirror, submodules included.
 RUN git config --global url."${GITHUB_MIRROR}".insteadOf "https://github.com/"
 
-RUN cd /opt/DeepInfer \
-    && TORCH_DEVICE_BACKEND_AUTOLOAD=0 \
-       DEEPINFER_ACCELERATOR=ascend \
-       DEEP_SELECT_BUILD_TARGET_PLATFORM=ASCEND \
-       LD_LIBRARY_PATH="${ASCEND_HOME_PATH:-/usr/local/Ascend/ascend-toolkit/latest}/x86_64-linux/devlib/linux/x86_64:${LD_LIBRARY_PATH:-}" \
-       PIP_INDEX_URL="$(cat /opt/pip-index)" bash ./build.sh
+# set_env.sh is what makes the toolkit usable, and no layer had ever sourced
+# it. Without it torch_npu resolved libruntime_common.so but not the
+# ErrorManager symbols it needs from the other CANN libraries, so the import
+# died on "undefined symbol: _ZN12ErrorManager19ATCReportErrMessage...". It also
+# exports ASCEND_HOME_PATH, which the stub path below is relative to. `set -eu`
+# so a missing set_env.sh fails here rather than ten lines later.
+RUN set -eu; \
+    cd /opt/DeepInfer; \
+    . /usr/local/Ascend/ascend-toolkit/set_env.sh; \
+    export LD_LIBRARY_PATH="$ASCEND_HOME_PATH/x86_64-linux/devlib/linux/x86_64:${LD_LIBRARY_PATH:-}"; \
+    export TORCH_DEVICE_BACKEND_AUTOLOAD=0 \
+           DEEPINFER_ACCELERATOR=ascend \
+           DEEP_SELECT_BUILD_TARGET_PLATFORM=ASCEND; \
+    export PIP_INDEX_URL="$(cat /opt/pip-index)"; \
+    bash ./build.sh
 
 WORKDIR /opt/DeepInfer
