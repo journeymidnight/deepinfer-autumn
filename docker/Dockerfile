@@ -96,6 +96,41 @@ RUN apt-get update \
 # every github.com clone through the mirror, submodules included.
 RUN git config --global url."${GITHUB_MIRROR}".insteadOf "https://github.com/"
 
+# Two fixes to vendor/DeepSelect, both measured against the real failing
+# compile on a 950PR. They are applied here, after the submodules are checked
+# out and before build_vendor.sh runs: its own `submodule update --init` has no
+# --force and the recorded SHAs already match, so it leaves these edits alone.
+#
+# 1. setup.py hardcodes "aarch64-linux" in the include and link paths. This host
+#    is x86_64, where that directory does not exist, so __has_include
+#    ("kernel_operator.h") failed, kerutils never defined
+#    KERUTILS_IS_BUILD_ON_ASCEND, and api.cpp died on six undeclared
+#    KU_CHECK_DEVICE plus common.h's "Neither ... is defined!" #error.
+#    $(uname -m) keeps it correct on an aarch64 host too.
+#
+# 2. bisheng compiling the device kernel cannot parse GCC 13's <utility>: it
+#    reports "class member cannot be redeclared" in stl_pair.h:416. DeepInfer
+#    needs GCC >= 13 for its own extension, so both toolchains are installed
+#    and clang picks the newest it finds. Retrying the exact failing command:
+#
+#      as-is                         FAIL stl_pair.h:416
+#      -nostdinc++ + GCC 11 headers   OK
+#      -std=c++17                    FAIL (kernel.h errors instead)
+#      --gcc-toolchain=/usr          FAIL (still picks 13)
+#
+#    so the kernel is pointed at the base image's own older libstdc++ headers.
+#    Only DeepSelect's flags change; DeepInfer still builds against GCC 13.
+RUN set -eu; \
+    cd /opt/DeepInfer; \
+    git submodule update --init --recursive; \
+    m="$(uname -m)"; \
+    cxx_old="$(ls /usr/include/c++ | sort -V | head -1)"; \
+    sed -i "s|\"aarch64-linux\"|\"${m}-linux\"|g" vendor/DeepSelect/setup.py; \
+    sed -i "s|f\"--npu-arch={arch}\",|f\"--npu-arch={arch}\", \"-nostdinc++\", \"-isystem\", \"/usr/include/c++/${cxx_old}\", \"-isystem\", \"/usr/include/${m}-linux-gnu/c++/${cxx_old}\",|" \
+        vendor/DeepSelect/setup.py; \
+    grep -c "${m}-linux" vendor/DeepSelect/setup.py; \
+    grep -n "nostdinc" vendor/DeepSelect/setup.py
+
 # set_env.sh is what makes the toolkit usable, and no layer had ever sourced
 # it: the base image sets the Ascend environment from /root/.bashrc, which a
 # login shell picks up and a Dockerfile RUN does not. `set -eu` so a missing
