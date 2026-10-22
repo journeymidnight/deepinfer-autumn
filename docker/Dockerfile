@@ -16,10 +16,10 @@ FROM ${BASE_IMAGE}
 # mirrors.ivolces.com cannot build this project: its index stops at einops
 # 0.8.1 while requirements-ascend.txt pins 0.8.2, so the resolve fails outright
 # (measured on the target host). Anything pointing there is replaced with pypi.
-ARG PIP_INDEX_URL=https://pypi.org/simple
+ARG PIP_INDEX_URL=https://repo.huaweicloud.com/repository/pypi/simple
 RUN case "$PIP_INDEX_URL" in \
-      *mirrors.ivolces.com*) echo "PIP_INDEX_URL=$PIP_INDEX_URL cannot resolve einops 0.8.2; using pypi.org" \
-        && echo "https://pypi.org/simple" > /opt/pip-index ;; \
+      *mirrors.ivolces.com*) echo "PIP_INDEX_URL=$PIP_INDEX_URL cannot resolve einops 0.8.2; using the huaweicloud mirror" \
+        && echo "https://repo.huaweicloud.com/repository/pypi/simple" > /opt/pip-index ;; \
       *) echo "$PIP_INDEX_URL" > /opt/pip-index ;; \
     esac
 ENV PIP_INDEX_URL=""

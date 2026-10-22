@@ -87,9 +87,15 @@ ENV DEEPINFER_ACCELERATOR=ascend
 # The pipeline passes --build-arg PIP_INDEX_URL=https://mirrors.ivolces.com/pypi/simple,
 # which overrides the default below, so the value is corrected in the step
 # itself rather than trusted: that index stops at einops 0.8.1 while
-# requirements.txt pins 0.8.2 (pypi has 0.8.2 as its latest -- checked, this is
-# the mirror lagging, not a bad pin). Same guard as docker/Dockerfile.
-ARG PIP_INDEX_URL=https://pypi.org/simple
+# requirements.txt pins 0.8.2 -- checked against pypi, which lists 0.8.2 as the
+# latest release, so this is the mirror lagging and not a bad pin.
+#
+# The replacement is huaweicloud's mirror rather than pypi.org because the base
+# image already configures it in /root/.pip/pip.conf: it is in-region for the
+# build pool, and it does carry 0.8.2 (verified). Note that simply UNSETTING
+# PIP_INDEX_URL would also land there, silently -- the explicit value is so the
+# index is visible in the build log. Same guard as docker/Dockerfile.
+ARG PIP_INDEX_URL=https://repo.huaweicloud.com/repository/pypi/simple
 ARG GITHUB_MIRROR=https://ghfast.top/https://github.com/
 COPY DEEPINFER_REV /opt/DEEPINFER_REV
 RUN set -eux; \
@@ -102,8 +108,8 @@ RUN set -eux; \
     ls -l; \
     idx="$PIP_INDEX_URL"; \
     case "$idx" in *mirrors.ivolces.com*) \
-        echo "PIP_INDEX_URL=$idx lacks einops 0.8.2 (its index stops at 0.8.1, pypi has 0.8.2 as latest); using pypi.org"; \
-        idx=https://pypi.org/simple ;; \
+        echo "PIP_INDEX_URL=$idx lacks einops 0.8.2 (its index stops at 0.8.1); using the huaweicloud mirror"; \
+        idx=https://repo.huaweicloud.com/repository/pypi/simple ;; \
     esac; \
     PIP_INDEX_URL="$idx" pip install -r requirements-ascend.txt; \
     python -c "import torch; print('torch', torch.__version__)"; \
