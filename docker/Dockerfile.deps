@@ -84,8 +84,11 @@ ENV DEEPINFER_ACCELERATOR=ascend
 # pins, so the deps image and the build cannot disagree about what is installed.
 # NOTE: rebuild this image when DEEPINFER_REV or any requirements file changes.
 #
-# NOT mirrors.ivolces.com: its index stops at einops 0.8.1 while
-# requirements-ascend.txt pins 0.8.2, so the resolve fails outright.
+# The pipeline passes --build-arg PIP_INDEX_URL=https://mirrors.ivolces.com/pypi/simple,
+# which overrides the default below, so the value is corrected in the step
+# itself rather than trusted: that index stops at einops 0.8.1 while
+# requirements.txt pins 0.8.2 (pypi has 0.8.2 as its latest -- checked, this is
+# the mirror lagging, not a bad pin). Same guard as docker/Dockerfile.
 ARG PIP_INDEX_URL=https://pypi.org/simple
 ARG GITHUB_MIRROR=https://ghfast.top/https://github.com/
 COPY DEEPINFER_REV /opt/DEEPINFER_REV
@@ -97,7 +100,12 @@ RUN set -eux; \
     git fetch --depth 1 origin "$sha"; \
     git checkout -q FETCH_HEAD -- requirements.txt requirements-ascend.txt requirements-dev.txt; \
     ls -l; \
-    PIP_INDEX_URL="$PIP_INDEX_URL" pip install -r requirements-ascend.txt; \
+    idx="$PIP_INDEX_URL"; \
+    case "$idx" in *mirrors.ivolces.com*) \
+        echo "PIP_INDEX_URL=$idx lacks einops 0.8.2 (its index stops at 0.8.1, pypi has 0.8.2 as latest); using pypi.org"; \
+        idx=https://pypi.org/simple ;; \
+    esac; \
+    PIP_INDEX_URL="$idx" pip install -r requirements-ascend.txt; \
     python -c "import torch; print('torch', torch.__version__)"; \
     pip list 2>/dev/null | grep -iE "^(torch|torch-npu|einops) " || true
 
