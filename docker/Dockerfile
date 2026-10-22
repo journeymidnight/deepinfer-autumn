@@ -75,11 +75,9 @@ RUN cd /opt/DeepInfer \
 #   back to Platform.CUDA and dies on "PyTorch must be compiled with CUDA
 #   support"; the env var (uppercase ASCEND) overrides the detection.
 #
-# Its ascend branch then imports torch_npu explicitly, which still wants
-# libascend_hal.so. The CANN toolkit ships a link stub of it under
-# x86_64-linux/devlib/linux/x86_64 -- that is in the image, unlike the driver --
-# and that stub is enough: the run that added it got as far as
-# "Building DeepSelect (ASCEND)".
+# Its ascend branch then imports torch_npu explicitly, so that import has to
+# work here even though nothing on this machine will ever run a kernel; see the
+# LD_LIBRARY_PATH note below for what that takes.
 #
 # lspci is a real build dependency, not a convenience. DeepSelect imports
 # tests.kernelkit, whose build.py calls get_current_platform() at import time,
@@ -99,15 +97,23 @@ RUN apt-get update \
 RUN git config --global url."${GITHUB_MIRROR}".insteadOf "https://github.com/"
 
 # set_env.sh is what makes the toolkit usable, and no layer had ever sourced
-# it. Without it torch_npu resolved libruntime_common.so but not the
-# ErrorManager symbols it needs from the other CANN libraries, so the import
-# died on "undefined symbol: _ZN12ErrorManager19ATCReportErrMessage...". It also
-# exports ASCEND_HOME_PATH, which the stub path below is relative to. `set -eu`
-# so a missing set_env.sh fails here rather than ten lines later.
+# it: the base image sets the Ascend environment from /root/.bashrc, which a
+# login shell picks up and a Dockerfile RUN does not. `set -eu` so a missing
+# set_env.sh fails here rather than ten lines later.
+#
+# It also adds /usr/local/Ascend/driver/lib64{,/common,/driver}, which is where
+# libascend_hal.so lives -- on an NPU host. A CP agent has no driver directory
+# at all, so the stub the toolkit ships under x86_64-linux/devlib is APPENDED to
+# cover that one gap. Appended, not prepended: measured on a 950PR, sourcing
+# set_env.sh alone imports torch_npu fine, appending the stub dir keeps it fine,
+# and *prepending* it breaks the import with "undefined symbol:
+# _ZN12ErrorManager19ATCReportErrMessage..." -- devlib holds device-side builds
+# of liberror_manager and libruntime_common, and in front of the path they
+# shadow the host-side ones.
 RUN set -eu; \
     cd /opt/DeepInfer; \
     . /usr/local/Ascend/ascend-toolkit/set_env.sh; \
-    export LD_LIBRARY_PATH="$ASCEND_HOME_PATH/x86_64-linux/devlib/linux/x86_64:${LD_LIBRARY_PATH:-}"; \
+    export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}:$ASCEND_HOME_PATH/x86_64-linux/devlib/linux/x86_64"; \
     export TORCH_DEVICE_BACKEND_AUTOLOAD=0 \
            DEEPINFER_ACCELERATOR=ascend \
            DEEP_SELECT_BUILD_TARGET_PLATFORM=ASCEND; \
