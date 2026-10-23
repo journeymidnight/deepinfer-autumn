@@ -111,4 +111,35 @@ replace(
     '            " Bytes (", alignment_requirement_bytes / itemsize, " numbers)"\n',
     count=1,
 )
+# FlashMLA calls asc_float2bfloat16_rn_v2_impl, which no CANN release declares:
+# grepping the whole toolkit tree finds it in neither 9.2.0 nor 9.2.0-beta.1,
+# while asc_float2bfloat16_rn_v2 is declared in both. The call site says why --
+# "Use `_impl` since `_v2` is marked as depreciated and I cannot find a
+# alternative" -- so `_impl` was an internal spelling of the same intrinsic,
+# reached for to dodge a deprecation warning. These kernels already compile with
+# -Wno-deprecated-declarations, so the public name costs nothing, and 9.2.0
+# declares it with exactly the signature the kernel calls.
+replace(
+    ROOT / "vendor/FlashMLA/csrc/ascend_kernels/prefill/sparse/kernel_body.h",
+    "asc_float2bfloat16_rn_v2_impl(",
+    "asc_float2bfloat16_rn_v2(",
+    count=2,
+)
+# Pinning the kernels to the GCC 11 headers pins FlashMLA's api sources too --
+# one CppExtension, one flag list -- and that code has a `constexpr
+# std::string`, which needs libstdc++ 12. The image has only 11 and 13 (11 from
+# the ubuntu22.04 base, 13 because DeepInfer requires it), so each set breaks
+# one side: 11 the api code, 13 the kernels.
+#
+# The constexpr is decorative. get_dynamic_enum_name returns a std::string that
+# escapes, so it can never appear in a constant expression, and all 18 of its
+# call sites are runtime ones -- TORCH_CHECK messages and fprintf arguments.
+# Replaying the exact command ninja ran for csrc/api/sparse_decode.cpp: with
+# `constexpr` 8 errors, with `inline` 0.
+replace(
+    ROOT / "vendor/FlashMLA/csrc/api/common.h",
+    "static constexpr std::string get_dynamic_enum_name",
+    "static inline std::string get_dynamic_enum_name",
+    count=1,
+)
 print(f"vendor operators patched for {MACHINE}")

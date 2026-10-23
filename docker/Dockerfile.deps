@@ -45,10 +45,20 @@ RUN if [ -n "$APT_MIRROR" ]; then \
     fi
 
 # Split from the PPA install below so a retry reuses this layer from cache.
+# These all come from the Ubuntu archive, which does not 503 the way the PPA
+# does, so they do not need the retry loop.
+#
+# libdw-dev is a real build dependency of DeepEP-Ascend: its vendored
+# third-party/deep_jit includes <elfutils/libdwfl.h> unconditionally from
+# utils/exception.hpp, to symbolize stack traces. Without it the package dies
+# on "elfutils/libdwfl.h: No such file or directory". Its CMakeLists links no
+# `dw`, so a link failure looked likely too -- measured in a container with
+# only this package added, the wheel builds and links clean, so the header is
+# all that was missing.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends -o Acquire::Retries=10 \
         software-properties-common ca-certificates gnupg dirmngr \
-        curl git pkg-config make cmake ninja-build \
+        curl git pkg-config make cmake ninja-build libdw-dev \
     && add-apt-repository -y ppa:deadsnakes/ppa \
     && add-apt-repository -y ppa:ubuntu-toolchain-r/test \
     && apt-get update
